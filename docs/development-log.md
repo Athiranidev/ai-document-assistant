@@ -125,3 +125,136 @@ During the lab, FastAPI/Uvicorn was listening on `127.0.0.1:8000`. The existing 
 5. Evaluate OCR for scanned PDFs as a separate enhancement.
 
 Do not describe embeddings, vector search, OCR, permanent storage, or LLM question answering as completed until they have been implemented and tested.
+
+---
+
+## Latest milestone — Embeddings and in-memory vector storage
+
+**Milestone date:** 13 November 2026
+
+### 1. Sentence Transformers installation
+
+Installed Sentence Transformers inside the project's `.venv`.
+
+| Package | Observed version |
+|---|---:|
+| sentence-transformers | 6.3.0 |
+| torch | 2.15.0 |
+| transformers | 5.22.2 |
+| chromadb | 1.5.9 |
+
+The model used:
+
+`sentence-transformers/all-MiniLM-L6-v2`
+
+Model execution was verified on CPU. PyTorch reported CUDA unavailable and GPU count 0.
+
+### 2. Model lifecycle management
+
+Integrated model initialization into FastAPI's lifespan function.
+
+- The embedding model is loaded during application startup.
+- The model is made available through `app.state.embedding_model`.
+- Upload requests reuse the loaded model.
+- The application clears its model reference during shutdown.
+
+The model is loaded once per application process, not once per PDF upload. Multiple application worker processes would each have their own model instance.
+
+### 3. Embedding generation
+
+Connected Sentence Transformers to the existing PDF processing pipeline.
+
+For every extracted text chunk:
+
+- The chunk text is passed to the embedding model.
+- The model generates a numerical vector.
+- The selected model produces 384-dimensional embeddings.
+- Embeddings are temporarily held in memory.
+
+The test PDF produced 54 chunks and 54 embeddings.
+
+### 4. ChromaDB installation and initialization
+
+Installed ChromaDB 1.5.9 in the project virtual environment.
+
+Used:
+
+`chromadb.EphemeralClient()`
+
+The client is initialized during FastAPI startup and stored in:
+
+`app.state.chroma_client`
+
+This provides temporary in-memory vector storage rather than persistent disk storage.
+
+### 5. Document collection and vector insertion
+
+For each uploaded document containing extractable text:
+
+1. Generate a unique session identifier using Python's `uuid` module.
+2. Create a collection named using the `document_` prefix and unique identifier.
+3. Configure cosine similarity using `metadata={"hnsw:space": "cosine"}`.
+4. Insert chunk IDs and text documents.
+5. Insert the corresponding 384-dimensional embedding vectors.
+6. Store metadata including page number, chunk index, filename and session ID.
+7. Count the stored vectors using `collection.count()`.
+
+The upload response includes the session ID, collection name, chunk count, embedding information and stored-vector count.
+
+### 6. Verified end-to-end test
+
+Uploaded `file-example_PDF_1MB.pdf` through Swagger after integrating ChromaDB.
+
+| Metric | Verified result |
+|---|---:|
+| HTTP status | 200 |
+| PDF pages | 30 |
+| Extracted characters | 50,148 |
+| Generated chunks | 54 |
+| Generated embeddings | 54 |
+| Embedding dimensions | 384 |
+| Vectors stored in ChromaDB | 54 |
+
+The API returned a unique session ID and collection name.
+
+This confirms successful PDF extraction, chunking, embedding generation and vector insertion for this test document.
+
+### 7. Storage and lifecycle behaviour
+
+The current design uses ChromaDB's ephemeral in-memory client.
+
+- Original PDF files are not permanently saved.
+- Vectors and associated chunk data are kept in the in-memory collection.
+- Data is lost when the application process terminates or restarts.
+- Browser refresh or browser closure alone does not delete the in-memory collection.
+- Explicit session expiry and collection cleanup have not yet been implemented.
+- Authentication and ownership checks for document sessions have not yet been implemented.
+
+The current implementation is suitable for development and testing, not yet a production-ready multi-user document service.
+
+### 8. Current project status
+
+**Completed and tested:**
+
+- FastAPI application and API routes.
+- Swagger/OpenAPI documentation.
+- PDF validation and in-memory text extraction.
+- Page-based text chunking with overlap.
+- Sentence Transformer model loading through FastAPI lifespan.
+- CPU-based embedding generation.
+- ChromaDB ephemeral client initialization.
+- Unique document collection creation.
+- Vector insertion and stored-vector count verification.
+
+**Pending implementation:**
+
+1. Semantic similarity search using a question embedding.
+2. Search API endpoint.
+3. Retrieval of the most relevant chunks with page references.
+4. Session expiration and automatic collection cleanup.
+5. Session authentication and isolation.
+6. LLM integration for question answering.
+7. OCR for image-only scanned PDFs.
+8. Automated testing, security hardening and deployment.
+
+The next development milestone is semantic search: embed a user's question, query the appropriate ChromaDB collection and return the most relevant document chunks.

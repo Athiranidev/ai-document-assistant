@@ -99,3 +99,133 @@ I do not need to recreate the environment each time I open a terminal.
 - How will the application retain chunk metadata while keeping the original PDF temporary?
 - How will the API handle scanned PDFs and OCR output?
 - How do we avoid returning very large chunk payloads to API clients?
+
+---
+
+# Latest learning session — Embeddings and ChromaDB
+Date: 13 November 2026
+
+## 18. What is an embedding model?
+
+Answer: An embedding model is a trained neural network that converts text into a numerical vector representing aspects of its meaning. We use sentence-transformers/all-MiniLM-L6-v2. It produces 384-dimensional vectors.
+
+## 19. What does an embedding model contain?
+
+Answer: A trained model consists of a neural-network architecture, learned numerical weights, and configuration/tokenizer components. The learned weights are reused to process different text inputs. We do not train a new model for every uploaded document.
+
+## 20. Can one model process documents from multiple users?
+
+Answer: Yes. The same loaded model can process different users' documents. It receives different text inputs and generates different embedding vectors. Its learned weights do not change during normal inference. Each application worker process generally has its own model instance.
+
+## 21. Why do we load the embedding model during FastAPI startup?
+
+Answer: Loading a model is relatively expensive in time and memory. We use FastAPI lifespan management to load the model once when the application starts and reuse it across requests. This avoids repeatedly initializing the model for every PDF upload.
+
+## 22. What are application startup, lifespan and shutdown?
+
+Answer:
+- Startup: Initialize resources such as the Sentence Transformer model and ChromaDB client.
+- Running: Handle API requests using those initialized resources.
+- Shutdown: Release application references and allow resources to be cleaned up.
+
+We use Python's asynccontextmanager and FastAPI's lifespan parameter for this lifecycle.
+
+## 23. Why do we use a CPU or GPU for embeddings?
+
+Answer: Both CPUs and GPUs can execute model inference. A CPU is a general-purpose processor and is sufficient for our current small prototype. A GPU can accelerate suitable parallel mathematical operations, especially for larger workloads and batches. Our PyTorch test reported CUDA unavailable and zero CUDA devices, so we explicitly selected CPU execution.
+
+## 24. What does 384-dimensional embedding mean?
+
+Answer: The selected all-MiniLM-L6-v2 model produces a vector containing 384 numerical values for each input text. If we have 54 chunks, their embedding matrix has a shape of 54 by 384.
+
+## 25. Why do we generate embeddings after text chunking?
+
+Answer: Chunking divides a document into manageable text sections. Sentence Transformers converts each section into a numerical vector. These vectors allow us to search for semantically relevant passages instead of relying only on exact keyword matches.
+
+## 26. What is ChromaDB?
+
+Answer: ChromaDB is a vector database that can store embeddings along with their associated text and metadata, and retrieve similar vectors. We use it to store document chunks and their embeddings for later semantic search.
+
+## 27. What is ChromaDB EphemeralClient?
+
+Answer: EphemeralClient creates an in-memory ChromaDB client. Its data is temporary and is not persisted to disk. In our application, the client is initialized during FastAPI startup and stored in app.state.chroma_client. Its data is lost when the application process terminates or restarts.
+
+## 28. Does closing or refreshing the browser delete the ChromaDB data?
+
+Answer: No. Browser refresh or closure does not automatically delete server-side in-memory collections. The collections remain in the application process until explicitly deleted or the process terminates. We still need to implement session expiration and automatic cleanup.
+
+## 29. How do we separate uploaded documents in ChromaDB?
+
+Answer: Our current upload implementation generates a unique UUID-based session ID and creates a collection name using the document_ prefix. Each upload gets its own collection. We also store the session ID, filename, page number and chunk index as metadata. Authentication, ownership checks and secure multi-user access controls are not yet implemented.
+
+## 30. What exactly happens when a PDF is uploaded now?
+
+Answer:
+1. FastAPI receives and validates the PDF.
+2. PyMuPDF extracts text page by page from the uploaded bytes in memory.
+3. Python divides the extracted text into chunks.
+4. Sentence Transformers generates a 384-dimensional embedding for each chunk.
+5. The application creates a unique ChromaDB collection.
+6. ChromaDB stores the chunk IDs, text, embeddings and metadata in memory.
+7. The API returns the processing result, session ID and stored-vector count.
+
+## 31. What did our ChromaDB integration test prove?
+
+Answer: We uploaded a 30-page text-based PDF and verified:
+- 30 pages detected.
+- 50,148 characters extracted.
+- 54 text chunks generated.
+- 54 embeddings generated.
+- 384 dimensions per embedding.
+- 54 vectors inserted into ChromaDB.
+- HTTP 200 response.
+
+This verifies vector insertion, but semantic question search has not yet been implemented.
+
+## 32. What is the difference between model, document and embedding?
+
+Answer:
+- Model: The trained mathematical engine that processes text.
+- Document: The user's uploaded input.
+- Embedding: The numerical vector generated from the document's text.
+
+One loaded model can process many different documents and generate different embeddings.
+
+## 33. What happens to the model and ChromaDB when FastAPI stops?
+
+Answer: The application shutdown handler clears the references to the embedding model and ChromaDB client. When the process terminates, the in-memory ChromaDB data is lost. The downloaded pretrained model files remain in the local Hugging Face cache and do not need to be downloaded again on every startup.
+
+## 34. What is the current difference between embedding generation and semantic search?
+
+Answer: Embedding generation converts text into vectors. Semantic search uses a question vector to find the most similar document vectors in ChromaDB. We have implemented and tested embedding generation and vector insertion. Query embedding, similarity search and retrieval are the next development tasks.
+
+## Updated project status
+
+**Completed and tested:**
+- Python virtual environment and package installation.
+- FastAPI application and endpoints.
+- Swagger/OpenAPI and curl testing.
+- PDF validation and in-memory text extraction.
+- Page-based text chunking.
+- Sentence Transformer model loading through FastAPI lifespan.
+- CPU-based embedding generation.
+- ChromaDB EphemeralClient initialization.
+- UUID-based document collection creation.
+- In-memory vector insertion and metadata.
+- Verification that 54 vectors were stored successfully.
+
+**Still pending:**
+- Semantic similarity search.
+- Search API endpoint.
+- Retrieval of relevant passages and page references.
+- Session expiry and automatic collection cleanup.
+- Authentication and document ownership controls.
+- LLM-based question answering.
+- OCR for scanned PDFs.
+- Automated tests, security hardening and deployment.
+
+## Updated interview explanation
+
+"I developed a Python REST API using FastAPI and Uvicorn. I implemented PDF upload and validation, extracted text page by page using PyMuPDF, and divided the extracted content into overlapping chunks. I integrated Sentence Transformers to generate 384-dimensional embeddings. I then used ChromaDB's EphemeralClient to store the vectors, associated text and metadata in memory. I verified the workflow using a 30-page PDF, which produced 54 chunks and 54 successfully stored vectors. The next stage is implementing semantic similarity search and retrieval."
+
+Note: This updated explanation supersedes the earlier interview summary in this document, which described embeddings and vector storage as planned work.
