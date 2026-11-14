@@ -2,6 +2,10 @@ import pymupdf
 import chromadb
 import uuid #unique identifier for each uploaded PDF session.
 
+from chromadb.errors import NotFoundError
+
+from pydantic import BaseModel, Field #what information the API expects.
+
 from contextlib import asynccontextmanager
 from sentence_transformers import SentenceTransformer
 
@@ -38,6 +42,11 @@ app = FastAPI(
 )
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+class SearchRequest(BaseModel):
+    session_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    query: str = Field(min_length=1, max_length=1000)
+    top_k: int = Field(default=5, ge=1, le=10)
 
 def create_text_chunks(pages, chunk_size=200, overlap=40):
     chunks = []
@@ -213,4 +222,66 @@ async def upload_document(
         "embedding_dimensions": embedding_dimensions,
         "embedding_preview": embedding_preview,
         "chunks": chunks
+    }
+
+
+@app.post("/documents/search")
+def search_document(
+    payload: SearchRequest,
+    request: Request
+):
+    # Step 1: Identify the document collection
+    collection_name = f"document_{payload.session_id}"
+
+    try:
+        collection = request.app.state.chroma_client.get_collection(
+            name=collection_name
+        )
+    except NotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Document session not found or expired"
+        ) from None
+
+    # Step 2: Generate embedding for the user's question
+    embedding_model = request.app.state.embedding_model
+
+    query_embedding = embedding_model.encode(
+        [payload.query],
+        convert_to_numpy=True,
+        show_progress_bar=False
+    )[0].tolist()
+
+    # Step 3: Determine the number of results
+    result_limit = min(payload.top_k, collection.count())
+
+    # Step 4: Search for similar vectors
+    search_results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=result_limit,
+        include=["documents", "metadatas", "distances"]
+    )
+
+    # Step 5: Format matching results
+    matches = []
+
+    for chunk_id, document, metadata, distance in zip(
+        search_results["ids"][0],
+        search_results["documents"][0],
+        search_results["metadatas"][0],
+        search_results["distances"][0]
+    ):
+        matches.append({
+            "chunk_id": chunk_id,
+            "text": document,
+            "page_number": metadata["page_number"],
+            "chunk_index": metadata["chunk_index"],
+            "distance": round(float(distance), 4)
+        })
+
+    return {
+        "session_id": payload.session_id,
+        "query": payload.query,
+        "results_count": len(matches),
+        "results": matches
     }
