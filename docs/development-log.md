@@ -302,48 +302,267 @@ Commit message:
 
 ### 9. Current Project Status
 
-**Completed and verified:**
+### 9. Gemini API Integration and RAG Implementation
+
+**Implementation date:** 16 November 2026
+
+Integrated Google's Gemini API into the existing FastAPI application to implement Retrieval-Augmented Generation (RAG).
+
+#### 9.1 Gemini SDK installation
+
+Installed the official Google GenAI Python SDK inside the project's virtual environment.
+
+| Component | Verified version |
+|---|---|
+| Google GenAI SDK | 2.34.0 |
+| python-dotenv | 1.2.4 |
+
+The SDK was installed using:
+
+`python -m pip install "google-genai<3"`
+
+Dependency validation was completed using `python -m pip check`, which reported no broken requirements.
+
+#### 9.2 API key configuration
+
+Created a Gemini API key through Google AI Studio.
+
+Configured the following environment variables in the project-level `.env` file:
+
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+
+Security measures:
+
+- The `.env` file is excluded through `.gitignore`.
+- File permissions were verified as `600` (`-rw-------`).
+- The API key is not hardcoded in application source code.
+- The actual API key is not stored in GitHub.
+
+Installed and verified `python-dotenv` for environment-variable loading.
+
+The application uses an explicit project-root path to locate `.env`:
+
+`PROJECT_ROOT = Path(__file__).resolve().parent.parent`
+
+#### 9.3 Standalone Gemini API test
+
+Successfully tested a standalone Gemini API request using the official Python SDK.
+
+Test configuration:
+
+- Model: `gemini-3.8-flash`
+- SDK: `google-genai`
+- Authentication: API key from `.env`
+
+Test prompt:
+
+`Reply with exactly: Gemini API connection successful.`
+
+Verified response:
+
+`Gemini API connection successful.`
+
+This confirmed successful API authentication, model availability and text generation.
+
+#### 9.4 Gemini client lifecycle management
+
+Integrated the Gemini client into FastAPI's lifespan.
+
+The application now initializes three major resources during startup:
+
+1. Sentence Transformer embedding model.
+2. ChromaDB EphemeralClient.
+3. Google Gemini API client.
+
+The Gemini client is stored in `app.state.gemini_client` and reused by incoming requests.
+
+The configured model name is stored in `app.state.gemini_model_name`.
+
+During application shutdown, the Gemini client is closed and its reference is cleared.
+
+Successfully verified application startup with all three resources initialized.
+
+#### 9.5 Reusable semantic retrieval function
+
+Created the reusable function:
+
+`retrieve_relevant_chunks()`
+
+Responsibilities:
+
+1. Construct the ChromaDB collection name using the session ID.
+2. Retrieve the corresponding collection.
+3. Handle missing collections using HTTP 404.
+4. Generate an embedding for the user's question.
+5. Perform vector similarity search.
+6. Retrieve document text, metadata and cosine distances.
+7. Return matching chunks with page numbers and chunk indexes.
+
+Refactored the existing `/documents/search` endpoint to use this shared function.
+
+This allows both semantic search and RAG question answering to reuse the same retrieval implementation.
+
+#### 9.6 RAG request model and API endpoint
+
+Created the Pydantic `AskRequest` model.
+
+Request fields:
+
+- `session_id`: Identifies the uploaded document collection.
+- `question`: Accepts the user's question.
+- `top_k`: Controls the maximum number of retrieved chunks, between 1 and 10.
+
+Implemented:
+
+`POST /documents/ask`
+
+The endpoint performs the following operations:
+
+1. Validates the incoming request.
+2. Retrieves relevant document chunks using `retrieve_relevant_chunks()`.
+3. Prepares document context containing source identifiers, page numbers, chunk indexes and text.
+4. Constructs a context-aware prompt.
+5. Sends the prompt to Gemini using `generate_content()`.
+6. Receives the generated answer.
+7. Returns the answer and source metadata.
+
+The prompt instructs Gemini to:
+
+- Answer using only the retrieved document context.
+- Avoid inventing information.
+- Abstain when the context does not contain the answer.
+- Treat document excerpts as untrusted input.
+- Reference supporting passages using source identifiers such as `[S1]` and `[S2]`.
+
+#### 9.7 RAG integration testing
+
+Tested the complete RAG workflow through FastAPI Swagger UI.
+
+**Test 1: Question about document content**
+
+Question:
+
+`What phrase appears at the beginning of the document?`
+
+Result:
+- HTTP 200.
+- Five retrieved chunks.
+- Gemini generated an answer using the supplied document context.
+- Source identifiers and page references were returned.
+
+The answer correctly indicated that the retrieved context did not establish the first phrase of the entire document.
+
+**Test 2: Question about unavailable information**
+
+Question:
+
+`Who is the author of this document?`
+
+Result:
+- HTTP 200.
+- Five retrieved chunks.
+- Gemini responded that the provided document context did not contain the author's information.
+- Source metadata was returned.
+
+This verified the intended missing-information response behaviour for the test case.
+
+**Test 3: Question about a specific passage**
+
+Question:
+
+`What phrase appears in the passage beginning with Cras fringilla?`
+
+Result:
+- HTTP 200.
+- Three retrieved chunks.
+- Gemini identified the matching phrase and returned source references.
+
+The response was correct for the requested passage, although it included additional information beyond what the question required.
+
+#### 9.8 Error handling and troubleshooting
+
+During initial RAG testing, the API returned HTTP 502 when Gemini answer generation failed.
+
+The endpoint was configured to return a generic HTTP 502 response instead of exposing internal provider errors to API clients.
+
+Python logging was added using `logging.exception()` to capture detailed exception information for debugging.
+
+The application was subsequently restored and successfully tested with RAG requests.
+
+#### 9.9 Verified application endpoints
+
+The following endpoints were registered and verified through the FastAPI OpenAPI document:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/` | Application root |
+| GET | `/health` | Health check |
+| POST | `/documents/upload` | PDF processing |
+| POST | `/documents/search` | Semantic search |
+| POST | `/documents/ask` | RAG question answering |
+
+#### 9.10 Current implementation limitations
+
+- ChromaDB still uses `EphemeralClient`.
+- Document collections are lost when the application process restarts.
+- Authentication and document ownership checks are not implemented.
+- Response latency has not yet been measured systematically.
+- Retrieval relevance and ranking require broader evaluation.
+- Generated answer length and relevance need improvement.
+- Source attribution needs further validation.
+- Automated tests have not yet been implemented.
+### 10. Current Project Status
+
+**Completed and tested:**
 
 - FastAPI application and lifecycle management.
 - PDF upload and validation.
 - PDF text extraction using PyMuPDF.
 - Page-based text chunking with overlap.
-- Sentence Transformer model integration.
-- CPU-based embedding generation.
+- Sentence Transformer integration.
+- CPU-based embedding generation (384 dimensions).
 - ChromaDB in-memory vector storage.
-- Unique collection creation for each document upload.
-- Pydantic search request validation.
-- Semantic search API implementation.
-- ChromaDB vector similarity retrieval.
-- Search response with document text, page numbers and distances.
-- Git commit and push of semantic search implementation.
+- UUID-based document collection creation.
+- Semantic search request validation using Pydantic.
+- Reusable ChromaDB retrieval function.
+- Semantic search API: `POST /documents/search`.
+- Google GenAI Python SDK installation.
+- Gemini API key configuration using `.env`.
+- Gemini standalone text-generation test.
+- Gemini client initialization through FastAPI lifespan.
+- Gemini client shutdown cleanup.
+- RAG request validation using Pydantic.
+- RAG API: `POST /documents/ask`.
+- Context-aware prompt construction.
+- Gemini-powered answer generation.
+- Source metadata and page references in the API response.
+- Successful end-to-end RAG tests through Swagger UI.
+- Missing-information response behaviour tested.
 
-### 10. Pending Implementation
+### 11. Pending Implementation
 
-1. Session expiration and automatic ChromaDB collection cleanup.
-2. Persistent vector storage so document collections survive application restarts.
-3. Authentication, document ownership and session isolation.
-4. LLM integration for grounded question answering (RAG).
-5. OCR support for image-only scanned PDFs.
-6. Automated unit and API integration testing.
-7. Application monitoring and observability using Prometheus and Grafana.
-8. Security hardening and performance optimization.
-9. Dockerization and deployment.
-10. Final documentation and production-readiness review.
+1. Improve RAG response latency and identify performance bottlenecks.
+2. Improve retrieval relevance and ranking.
+3. Make generated answers concise and directly relevant.
+4. Further validate source attribution and answer grounding.
+5. Add API timeouts, quota handling and robust provider error handling.
+6. Implement automated unit and API integration tests.
+7. Implement session expiry and automatic ChromaDB collection cleanup.
+8. Introduce persistent vector storage.
+9. Implement authentication, document ownership and session isolation.
+10. Add OCR support for image-only scanned PDFs.
+11. Integrate application-specific Prometheus metrics and Grafana dashboards.
+12. Complete security hardening and performance optimization.
+13. Create Dockerfile and Docker Compose configuration.
+14. Implement GitHub Actions CI/CD.
+15. Publish the Docker image and deploy the application.
+16. Complete final documentation and production-readiness review.
 
-### 11. Next Development Milestone
+### 12. Next Development Milestone
 
-**LLM-powered question answering using Retrieval-Augmented Generation (RAG).**
+**RAG quality, performance and reliability improvement.**
 
-The next milestone is to integrate an LLM with the existing semantic search functionality.
+The next milestone is to measure API response latency, investigate retrieval and generation performance, improve prompt quality and verify source attribution.
 
-The application will:
-
-1. Accept a user's question and document session ID.
-2. Retrieve relevant document chunks from ChromaDB.
-3. Construct a context-aware prompt using the retrieved chunks.
-4. Send the prompt and context to an LLM.
-5. Generate an answer grounded in the uploaded document.
-6. Return the answer with relevant page references.
-
-The existing PDF upload, text extraction, chunking, embedding generation, vector storage and semantic retrieval components will be reused.
+After these improvements, proceed with automated testing, persistent storage, Dockerization, CI/CD and deployment.
