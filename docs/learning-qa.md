@@ -172,6 +172,7 @@ Answer:
 ## 31. What did our ChromaDB integration test prove?
 
 Answer: We uploaded a 30-page text-based PDF and verified:
+
 - 30 pages detected.
 - 50,148 characters extracted.
 - 54 text chunks generated.
@@ -180,7 +181,7 @@ Answer: We uploaded a 30-page text-based PDF and verified:
 - 54 vectors inserted into ChromaDB.
 - HTTP 200 response.
 
-This verifies vector insertion, but semantic question search has not yet been implemented.
+We subsequently implemented and tested semantic search using the stored vectors. The search endpoint successfully returned five matching chunks for a test query.
 
 ## 32. What is the difference between model, document and embedding?
 
@@ -195,37 +196,168 @@ One loaded model can process many different documents and generate different emb
 
 Answer: The application shutdown handler clears the references to the embedding model and ChromaDB client. When the process terminates, the in-memory ChromaDB data is lost. The downloaded pretrained model files remain in the local Hugging Face cache and do not need to be downloaded again on every startup.
 
-## 34. What is the current difference between embedding generation and semantic search?
+### 34. What is the difference between embedding generation and semantic search?
 
-Answer: Embedding generation converts text into vectors. Semantic search uses a question vector to find the most similar document vectors in ChromaDB. We have implemented and tested embedding generation and vector insertion. Query embedding, similarity search and retrieval are the next development tasks.
+Answer:
 
-## Updated project status
+- Embedding generation converts text into a numerical vector.
+- Semantic search converts a user's question into an embedding and compares it with stored document embeddings.
+- ChromaDB retrieves the most relevant document chunks based on vector similarity.
+
+Our application now supports both document embedding generation and semantic search through the `/documents/search` endpoint.
+
+## 35. What is Pydantic, and why did we use it?
+
+Answer: Pydantic is a Python data validation library. FastAPI uses Pydantic models to validate incoming API request data.
+
+We created a SearchRequest model using BaseModel and Field to validate the session ID, query and top_k values.
+
+## 36. What is the purpose of the session_id?
+
+Answer: The session ID uniquely identifies an uploaded document session.
+
+We generate it using:
+
+uuid.uuid4().hex
+
+The ID is used to construct the corresponding ChromaDB collection name.
+
+## 37. Why does each uploaded PDF get a different ChromaDB collection?
+
+Answer: Each successful PDF upload generates a new UUID and creates a separate collection.
+
+For example:
+
+- PDF A → document_<session_A>
+- PDF B → document_<session_B>
+
+This allows the application to search the collection associated with a particular uploaded document.
+
+## 38. How does the semantic search endpoint find the correct collection?
+
+Answer: It receives the session ID from the user's request and constructs the collection name:
+
+collection_name = f"document_{payload.session_id}"
+
+It then retrieves the collection using ChromaDB's get_collection() method.
+
+## 39. Why do we generate an embedding for the user's question?
+
+Answer: ChromaDB stores the document chunks as numerical vectors. To perform semantic search, the user's question must also be converted into a vector using the same embedding model.
+
+Our application reuses the Sentence Transformer model loaded during FastAPI startup.
+
+## 40. What is top_k in semantic search?
+
+Answer: top_k controls how many matching document chunks ChromaDB should retrieve.
+
+Our SearchRequest model allows values from 1 to 10, with a default value of 5.
+
+For example, top_k=5 requests the five closest matching chunks.
+
+## 41. What is cosine distance?
+
+Answer: Cosine distance measures how different two vectors are in terms of their direction.
+
+Our ChromaDB collection uses cosine distance:
+
+metadata={"hnsw:space": "cosine"}
+
+A lower cosine distance indicates a closer match. It is not a percentage score.
+
+## 42. Why does the search endpoint return HTTP 404?
+
+Answer: The endpoint tries to retrieve the ChromaDB collection associated with the provided session ID.
+
+If that collection does not exist, ChromaDB raises NotFoundError.
+
+Our application catches this exception and returns HTTP 404 with an appropriate error message.
+
+## 43. What information does our semantic search endpoint return?
+
+Answer: The endpoint returns:
+
+- Session ID
+- Original search query
+- Number of retrieved results
+- Matching chunk IDs
+- Retrieved document text
+- Page numbers
+- Chunk indexes
+- Cosine distances
+
+This allows the application to identify and use relevant document passages.
+
+## 44. What is the difference between semantic search and RAG question answering?
+
+Answer:
+
+Semantic search retrieves relevant document chunks based on the meaning of a question.
+
+RAG (Retrieval-Augmented Generation) uses retrieved document chunks as context for an LLM to generate a grounded answer.
+
+Our application currently implements semantic retrieval. LLM-powered answer generation is the next major development milestone.
+
+## 45. What happens when multiple PDFs are uploaded without restarting FastAPI?
+
+Answer: Each upload creates a separate ChromaDB collection with a different session ID.
+
+All collections remain available in memory while the same application process is running.
+
+The user must provide the correct session ID to search the corresponding document.
+
+## 46. Why does our ChromaDB data disappear after restarting FastAPI?
+
+Answer: Our application uses chromadb.EphemeralClient(), which stores collections in memory.
+
+When the application process terminates or restarts, the in-memory collections are lost.
+
+Persistent storage has not yet been implemented.
+
+## Updated Project Status
 
 **Completed and tested:**
-- Python virtual environment and package installation.
-- FastAPI application and endpoints.
-- Swagger/OpenAPI and curl testing.
-- PDF validation and in-memory text extraction.
-- Page-based text chunking.
+
+- Python virtual environment and dependency installation.
+- FastAPI application and lifecycle management.
+- Swagger/OpenAPI documentation.
+- PDF validation and in-memory text extraction using PyMuPDF.
+- Page-based text chunking with overlap.
 - Sentence Transformer model loading through FastAPI lifespan.
-- CPU-based embedding generation.
+- CPU-based embedding generation (384 dimensions).
 - ChromaDB EphemeralClient initialization.
 - UUID-based document collection creation.
-- In-memory vector insertion and metadata.
-- Verification that 54 vectors were stored successfully.
+- In-memory vector insertion and metadata storage.
+- Pydantic request validation using BaseModel and Field.
+- Semantic search API: `POST /documents/search`.
+- Query embedding generation.
+- ChromaDB vector similarity retrieval.
+- Retrieval of matching document chunks, page numbers and cosine distances.
+- Handling of missing document collections using HTTP 404.
+- Successful Swagger testing with five retrieved search results.
+- Semantic search implementation committed and pushed to GitHub.
 
 **Still pending:**
-- Semantic similarity search.
-- Search API endpoint.
-- Retrieval of relevant passages and page references.
+
 - Session expiry and automatic collection cleanup.
+- Persistent vector storage.
 - Authentication and document ownership controls.
-- LLM-based question answering.
-- OCR for scanned PDFs.
-- Automated tests, security hardening and deployment.
+- LLM-based question answering using RAG.
+- OCR support for scanned PDFs.
+- Automated unit and API integration tests.
+- Application-specific monitoring and observability.
+- Security hardening and performance optimization.
+- Dockerization and deployment.
+- Final documentation and production-readiness review.
 
-## Updated interview explanation
+## Updated Interview Explanation
 
-"I developed a Python REST API using FastAPI and Uvicorn. I implemented PDF upload and validation, extracted text page by page using PyMuPDF, and divided the extracted content into overlapping chunks. I integrated Sentence Transformers to generate 384-dimensional embeddings. I then used ChromaDB's EphemeralClient to store the vectors, associated text and metadata in memory. I verified the workflow using a 30-page PDF, which produced 54 chunks and 54 successfully stored vectors. The next stage is implementing semantic similarity search and retrieval."
+"I developed a Python REST API using FastAPI and Uvicorn for an AI-powered document assistant. I implemented PDF upload and validation, extracted text page by page using PyMuPDF, and divided the extracted content into overlapping chunks.
 
-Note: This updated explanation supersedes the earlier interview summary in this document, which described embeddings and vector storage as planned work.
+I integrated Sentence Transformers to generate 384-dimensional embeddings and used ChromaDB's EphemeralClient to store document vectors, text and metadata in memory.
+
+I also implemented a semantic search API using Pydantic for request validation. The endpoint generates embeddings for user queries, retrieves the corresponding document collection using a session ID, and performs vector similarity search using ChromaDB. It returns relevant document chunks, page references and cosine distances.
+
+I verified the PDF processing using a 30-page document that generated 54 chunks and 54 stored vectors. I also tested the semantic search endpoint successfully through Swagger UI.
+
+The next major development milestone is integrating an LLM to generate grounded answers using Retrieval-Augmented Generation (RAG)."

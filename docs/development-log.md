@@ -232,29 +232,118 @@ The current design uses ChromaDB's ephemeral in-memory client.
 
 The current implementation is suitable for development and testing, not yet a production-ready multi-user document service.
 
-### 8. Current project status
+#### 8. Semantic Search Implementation
 
-**Completed and tested:**
+**Implementation date:** 16 November 2026
 
-- FastAPI application and API routes.
-- Swagger/OpenAPI documentation.
-- PDF validation and in-memory text extraction.
+Implemented the semantic search API using FastAPI, Sentence Transformers and ChromaDB.
+
+#### 8.1 Search request validation
+
+Created a Pydantic `SearchRequest` model with:
+
+- `session_id`: Validates a 32-character lowercase hexadecimal session identifier.
+- `query`: Accepts a question between 1 and 1,000 characters.
+- `top_k`: Controls the maximum number of retrieved chunks (1–10), defaulting to 5.
+
+#### 8.2 Search API endpoint
+
+Implemented:
+
+`POST /documents/search`
+
+The endpoint performs the following operations:
+
+1. Receives the session ID, search query and top-k value.
+2. Constructs the corresponding ChromaDB collection name.
+3. Retrieves the document collection using `get_collection()`.
+4. Handles missing collections with HTTP 404.
+5. Generates an embedding for the user's question using the existing Sentence Transformer model.
+6. Performs vector similarity search using ChromaDB's `collection.query()`.
+7. Retrieves document text, metadata and cosine distances.
+8. Returns matching chunks with page numbers and chunk indexes.
+
+#### 8.3 Search API testing
+
+Tested the endpoint through FastAPI Swagger UI.
+
+| Test | Result |
+|---|---|
+| API endpoint registration | Passed |
+| Valid session ID | Passed |
+| Invalid/nonexistent session ID | HTTP 404 |
+| Valid search request | HTTP 200 |
+| Top-k retrieval | 5 results returned |
+| Document metadata retrieval | Returned |
+| Similarity distance retrieval | Returned |
+
+The PDF upload and semantic search workflows were tested using a 30-page sample PDF containing 54 chunks and 54 stored vectors.
+
+The search endpoint successfully retrieved five matching chunks for the test query `Lorem ipsum dolor sit amet`.
+
+Retrieval relevance and ranking quality still require further evaluation with a broader set of questions.
+
+#### 8.4 Important implementation details
+
+- Each successful PDF upload creates a separate ChromaDB collection.
+- The session ID identifies the collection associated with that upload.
+- Multiple uploaded documents remain searchable while the same application process is running.
+- The application uses `chromadb.EphemeralClient()`.
+- Collections are lost when the application process terminates or restarts.
+- The search API reuses the embedding model loaded during application startup.
+
+#### 8.5 Git milestone
+
+Implemented and pushed the semantic search API to the GitHub repository.
+
+Commit message:
+
+`Implement semantic document search API`
+
+### 9. Current Project Status
+
+**Completed and verified:**
+
+- FastAPI application and lifecycle management.
+- PDF upload and validation.
+- PDF text extraction using PyMuPDF.
 - Page-based text chunking with overlap.
-- Sentence Transformer model loading through FastAPI lifespan.
+- Sentence Transformer model integration.
 - CPU-based embedding generation.
-- ChromaDB ephemeral client initialization.
-- Unique document collection creation.
-- Vector insertion and stored-vector count verification.
+- ChromaDB in-memory vector storage.
+- Unique collection creation for each document upload.
+- Pydantic search request validation.
+- Semantic search API implementation.
+- ChromaDB vector similarity retrieval.
+- Search response with document text, page numbers and distances.
+- Git commit and push of semantic search implementation.
 
-**Pending implementation:**
+### 10. Pending Implementation
 
-1. Semantic similarity search using a question embedding.
-2. Search API endpoint.
-3. Retrieval of the most relevant chunks with page references.
-4. Session expiration and automatic collection cleanup.
-5. Session authentication and isolation.
-6. LLM integration for question answering.
-7. OCR for image-only scanned PDFs.
-8. Automated testing, security hardening and deployment.
+1. Session expiration and automatic ChromaDB collection cleanup.
+2. Persistent vector storage so document collections survive application restarts.
+3. Authentication, document ownership and session isolation.
+4. LLM integration for grounded question answering (RAG).
+5. OCR support for image-only scanned PDFs.
+6. Automated unit and API integration testing.
+7. Application monitoring and observability using Prometheus and Grafana.
+8. Security hardening and performance optimization.
+9. Dockerization and deployment.
+10. Final documentation and production-readiness review.
 
-The next development milestone is semantic search: embed a user's question, query the appropriate ChromaDB collection and return the most relevant document chunks.
+### 11. Next Development Milestone
+
+**LLM-powered question answering using Retrieval-Augmented Generation (RAG).**
+
+The next milestone is to integrate an LLM with the existing semantic search functionality.
+
+The application will:
+
+1. Accept a user's question and document session ID.
+2. Retrieve relevant document chunks from ChromaDB.
+3. Construct a context-aware prompt using the retrieved chunks.
+4. Send the prompt and context to an LLM.
+5. Generate an answer grounded in the uploaded document.
+6. Return the answer with relevant page references.
+
+The existing PDF upload, text extraction, chunking, embedding generation, vector storage and semantic retrieval components will be reused.
