@@ -566,3 +566,270 @@ The following endpoints were registered and verified through the FastAPI OpenAPI
 The next milestone is to measure API response latency, investigate retrieval and generation performance, improve prompt quality and verify source attribution.
 
 After these improvements, proceed with automated testing, persistent storage, Dockerization, CI/CD and deployment.
+
+AI Document Assistant for Docker containerization by reviewing dependencies, understanding application architecture, identifying runtime requirements, and creating the initial Dockerfile.
+
+1. Python Environment and Dependency Validation
+
+Confirmed that Ubuntu uses an externally managed Python environment (PEP 668).
+
+Verified that the project has an existing .venv virtual environment.
+
+Activated and used the isolated environment for dependency validation.
+
+Executed:
+
+python -m pip install --dry-run -r requirements-docker.txt
+
+Result: All nine explicitly pinned dependencies resolved successfully.
+
+2. Dependency Analysis
+
+Reviewed the following Docker runtime dependencies:
+
+FastAPI
+
+Uvicorn
+
+Pydantic
+
+PyMuPDF
+
+ChromaDB
+
+Sentence Transformers
+
+Google GenAI
+
+Python dotenv
+
+Python multipart
+
+Inspected requirements.lock.txt, which contains the complete pinned dependency set, including transitive dependencies.
+
+Decision:
+
+Maintain separate Docker runtime dependencies.
+
+Exclude development-only dependencies when they are not needed at runtime.
+
+Investigate CPU-only PyTorch installation to avoid unnecessary CUDA dependencies.
+
+3. CPU and GPU Investigation
+
+Executed a PyTorch CUDA availability check.
+
+Results:
+
+PyTorch version: 2.15.0+cu132
+
+CUDA version: 13.2
+
+CUDA availability: False
+
+No CUDA GPU detected by PyTorch.
+
+Inspected app/main.py and confirmed:
+
+SentenceTransformer(
+    "sentence-transformers/all-MiniLM-L6-v2",
+    device="cpu"
+)
+
+Decision: The current application explicitly uses CPU-based embedding inference.
+
+4. Application Architecture Inspection
+
+Reviewed app/main.py.
+
+Identified the following components:
+
+Component
+
+Implementation
+
+API framework
+
+FastAPI
+
+Application server
+
+Uvicorn
+
+PDF processing
+
+PyMuPDF
+
+Embedding model
+
+all-MiniLM-L6-v2
+
+Embedding framework
+
+Sentence Transformers
+
+Vector database
+
+ChromaDB
+
+LLM provider
+
+Google Gemini
+
+Configuration
+
+Python dotenv
+
+5. ChromaDB Storage Investigation
+
+Identified the current initialization:
+
+app.state.chroma_client = chromadb.EphemeralClient()
+
+Reviewed collection creation and retrieval logic.
+
+Findings:
+
+Each document session receives a unique UUID.
+
+Collection names follow document_{session_id}.
+
+Document chunks and embeddings are stored in ChromaDB.
+
+Retrieval uses get_collection() and vector similarity search.
+
+No explicit collection deletion operation was identified in the inspected code.
+
+Planned improvement:
+
+Replace the in-memory EphemeralClient with ChromaDB PersistentClient and configure Docker persistent storage.
+
+Note: Prometheus is intended for monitoring, not database persistence. Prometheus and Grafana will be considered separately.
+
+6. Docker Configuration
+
+Inspected .dockerignore.
+
+Existing exclusions:
+
+.venv/
+
+.git/
+
+.env
+
+__pycache__/
+
+Python bytecode
+
+Pytest cache
+
+MyPy cache
+
+Coverage files
+
+Created the initial Dockerfile.
+
+Current configuration includes:
+
+Python 3.14 slim base image.
+
+Python environment variables.
+
+/app working directory.
+
+System build dependencies.
+
+Runtime dependency installation.
+
+Application source copying.
+
+Storage directory creation.
+
+Port 8000 exposure.
+
+Uvicorn startup command.
+
+7. Docker Concepts Learned
+
+Understood the distinction between:
+
+Dockerfile: Instructions for creating an image.
+
+Docker image: Packaged application and dependencies.
+
+Docker container: Running instance of an image.
+
+Also reviewed important Dockerfile instructions:
+
+FROM, ENV, WORKDIR, RUN, COPY, EXPOSE, and CMD.
+
+Understood the importance of:
+
+Lightweight base images.
+
+Dependency management.
+
+Non-root execution.
+
+Multi-stage builds.
+
+Persistent volumes.
+
+Health checks.
+
+Image optimization and security.
+
+8. Current Project Status
+
+Completed:
+
+Dependency validation.
+
+Python environment verification.
+
+CPU inference verification.
+
+Application architecture inspection.
+
+ChromaDB storage investigation.
+
+.dockerignore review.
+
+Initial Dockerfile creation.
+
+Docker installation verification.
+
+Docker version: 29.9.2
+
+Pending:
+
+Review and optimize Dockerfile instructions.
+
+Investigate CPU-only PyTorch installation.
+
+Verify Python 3.14 compatibility.
+
+Implement persistent ChromaDB storage.
+
+Configure secure environment variable injection.
+
+Add non-root container execution.
+
+Add container health checks.
+
+Build the Docker image.
+
+Run and test the container.
+
+Verify API functionality and data persistence.
+
+Consider Prometheus and Grafana integration.
+
+9. Key Learning Outcome
+
+Today's work focused on understanding the application before containerization rather than blindly writing a Dockerfile.
+
+The main architectural decisions are to use CPU-based inference, maintain separate runtime dependencies, preserve document data using persistent storage, and keep application secrets outside the Docker image.
+
+Next session objective: Improve the Dockerfile instruction by instruction, validate the configuration, and build the first Docker image.
