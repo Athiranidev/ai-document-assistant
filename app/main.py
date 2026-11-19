@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
         "sentence-transformers/all-MiniLM-L6-v2",
         device="cpu"
     )
-    app.state.chroma_client = chromadb.EphemeralClient()
+    app.state.chroma_client = chromadb.PersistentClient(path=str(PROJECT_ROOT / "storage"))
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
 
     print("Gemini client initialized.")
 
-    print("ChromaDB in-memory client initialized.")
+    print("ChromaDB persistent client initialized.")
 
     print("Embedding model loaded successfully.")
 

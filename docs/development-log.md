@@ -833,3 +833,137 @@ Today's work focused on understanding the application before containerization ra
 The main architectural decisions are to use CPU-based inference, maintain separate runtime dependencies, preserve document data using persistent storage, and keep application secrets outside the Docker image.
 
 Next session objective: Improve the Dockerfile instruction by instruction, validate the configuration, and build the first Docker image.
+
+---
+
+## 13. Docker Image Build and CPU-Only PyTorch Configuration
+
+**Development date:** 18 November 2026
+
+### Work Completed
+
+1. Updated the Dockerfile to install CPU-only PyTorch.
+2. Added `constraints-docker.txt` to pin the CPU-only PyTorch version (`2.15.0+cpu`).
+3. Updated Docker dependency installation using `requirements-docker.txt` and `constraints-docker.txt`.
+4. Built the Docker image successfully:
+
+```bash
+docker build -t ai-document-assistant:v1 .
+```
+
+5. Verified PyTorch inside the Docker image:
+   - Version: 2.15.0+cpu
+   - CUDA availability: False
+6. Verified package dependencies using:
+
+```bash
+docker run --rm ai-document-assistant:v1 python -m pip check
+```
+
+Result: No broken requirements found.
+
+7. Successfully started the FastAPI application inside the Docker container.
+8. Verified the health endpoint and Swagger UI.
+9. Tested PDF upload, semantic search and Gemini-powered question answering inside the container.
+10. Updated the Gemini model configuration to `gemini-flash-lite-latest` after encountering a temporary provider availability error.
+
+### Key Learnings
+
+- CPU-only PyTorch reduces unnecessary GPU-related dependencies.
+- Docker build cache reuses unchanged image layers.
+- Runtime environment variables can be injected using `--env-file`.
+- Docker images and containers have different lifecycles.
+- Application functionality must be tested inside the container, not just locally.
+
+---
+
+## 14. ChromaDB Persistent Storage and Docker Named Volumes
+
+**Development date:** 19 November 2026
+
+### Work Completed
+
+1. Replaced the ChromaDB in-memory client:
+
+```python
+chromadb.EphemeralClient()
+```
+
+with the persistent client:
+
+```python
+chromadb.PersistentClient(
+    path=str(PROJECT_ROOT / "storage")
+)
+```
+
+2. Updated the initialization log message to indicate persistent storage.
+3. Added `storage/` to `.gitignore` to prevent local ChromaDB database files from being tracked by Git.
+4. Added `storage/` to `.dockerignore` to exclude local database files from the Docker build context.
+5. Verified Python syntax using:
+
+```bash
+python -m py_compile app/main.py
+```
+
+6. Successfully rebuilt the Docker image:
+
+```bash
+docker build -t ai-document-assistant:v1 .
+```
+
+7. Created a Docker named volume:
+
+```bash
+docker volume create ai-document-assistant-data
+```
+
+8. Verified the volume using:
+
+```bash
+docker volume ls
+docker volume inspect ai-document-assistant-data
+```
+
+### Docker Disk Space Management
+
+- Inspected Docker images, containers, volumes and build cache.
+- Removed three approved Go practice images that were no longer required.
+- Inspected dangling build cache.
+- Cleaned unused build cache using:
+
+```bash
+docker builder prune
+```
+
+- Reclaimed approximately 1.3 GB of build cache.
+- Available disk space increased from 4.4 GB to 5.6 GB.
+
+### Key Learnings
+
+- Difference between ChromaDB ephemeral and persistent clients.
+- Difference between `.gitignore` and `.dockerignore`.
+- Difference between Docker images, containers and volumes.
+- How named volumes maintain storage independently of container lifecycle.
+- How Docker build cache affects rebuild performance and disk usage.
+
+### Current Status
+
+**Completed:**
+- ChromaDB persistent client configuration.
+- Docker image rebuild.
+- Named volume creation.
+- Volume inspection.
+
+**Pending:**
+1. Mount `ai-document-assistant-data` at `/app/storage` when starting the application container.
+2. Upload a PDF and verify that ChromaDB writes its data into the named volume.
+3. Remove the test container and start a new container using the same volume.
+4. Verify that previously stored document data remains accessible.
+5. Stage, commit and push the latest changes to GitHub.
+
+### Next Development Milestone
+
+**Docker Volume Integration and Persistence Testing**
+
+Verify that document collections and embeddings survive container removal and recreation by using the same named Docker volume.
