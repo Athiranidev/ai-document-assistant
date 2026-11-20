@@ -110,7 +110,6 @@ def create_text_chunks(pages, chunk_size=200, overlap=40):
 
     return chunks
 
-
 def retrieve_relevant_chunks(
     chroma_client,
     embedding_model,
@@ -119,16 +118,16 @@ def retrieve_relevant_chunks(
     top_k: int
 ):
     collection_name = f"document_{session_id}"
-
+   
     try:
         collection = chroma_client.get_collection(
-            name=collection_name
+        name=collection_name
         )
     except NotFoundError:
         raise HTTPException(
-            status_code=404,
-            detail="Document session not found or expired"
-        ) from None
+        status_code=404,
+        detail="Document session not found or expired"
+        ) from None    
 
     result_limit = min(top_k, collection.count())
 
@@ -273,6 +272,7 @@ async def upload_document(
     if chunks:
         session_id = uuid.uuid4().hex
         collection_name = f"document_{session_id}"
+
 
         collection = request.app.state.chroma_client.create_collection(
             name=collection_name,
